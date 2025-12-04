@@ -11,15 +11,20 @@
         .card { background: #e3f2fd; padding: 20px; border-radius: 10px; margin: 20px 0; border: 2px solid #bbdefb; }
         .word { font-size: 1.5em; font-weight: bold; color: #1565c0; display: block; margin-bottom: 10px; }
         .sentence { font-size: 1.2em; font-style: italic; color: #555; }
-        button { background-color: #4caf50; color: white; border: none; padding: 15px 30px; font-size: 1em; border-radius: 50px; cursor: pointer; transition: 0.3s; }
-        button:hover { background-color: #43a047; transform: scale(1.05); }
+        
+        /* Button Styles */
+        button { border: none; padding: 15px 30px; font-size: 1em; border-radius: 50px; cursor: pointer; transition: 0.3s; margin: 5px; }
+        button:hover { transform: scale(1.05); }
         button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        .btn-speak { background-color: #4caf50; color: white; font-weight: bold; } /* Green */
+        .btn-listen { background-color: #2196f3; color: white; } /* Blue */
+        .btn-next { background-color: #607d8b; color: white; font-size: 0.9em; padding: 10px 20px; } /* Grey */
+
         #result { margin-top: 20px; font-weight: bold; font-size: 1.2em; min-height: 1.5em; }
         .pass { color: green; }
         .fail { color: red; }
         .transcript { color: #888; font-size: 0.9em; margin-top: 5px; }
-        
-        /* Toggle Switch Style */
         .mode-switch { margin-bottom: 20px; display: inline-block; padding: 10px; background: #eee; border-radius: 8px; }
         .switch-label { font-weight: bold; color: #333; margin-left: 5px; }
     </style>
@@ -41,18 +46,20 @@
         <span class="sentence" id="target-sentence">...</span>
     </div>
 
-    <button id="speak-btn" onclick="startListening()">🎤 Tap to Speak</button>
+    <button class="btn-listen" onclick="playAudio()">🔊 Listen First</button>
+    <br>
+    <button id="speak-btn" class="btn-speak" onclick="startListening()">🎤 Tap to Speak</button>
 
     <div id="result"></div>
     <div id="transcript" class="transcript"></div>
     
     <div style="margin-top:20px;">
-        <button onclick="nextLevel()" style="background-color:#2196f3; font-size:0.9em; padding:10px 20px;">Next Sentence ➡️</button>
+        <button class="btn-next" onclick="nextLevel()">Next Sentence ➡️</button>
     </div>
 </div>
 
 <script>
-    // 1. THE CONTENT
+    // 1. DATA
     const levels = [
         { word: "Image", sentence: "The image on the screen is very clear." },
         { word: "Image", sentence: "He wants to improve his public image." },
@@ -113,7 +120,7 @@
         { word: "Manage", sentence: "It is difficult to manage a team." }
     ];
 
-    // 2. THE SHUFFLE LOGIC
+    // Shuffle Logic
     function shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -122,33 +129,80 @@
     }
     shuffleArray(levels);
 
-    // 3. THE GAME ENGINE
     let currentIndex = 0;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
+    
+    // Audio Context for sound effects
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
     recognition.lang = 'en-US'; 
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
-    // Helper to remove punctuation for easier matching
+    // Helper: Clean text
     function normalizeText(text) {
-        return text.toLowerCase()
-                   .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"") // Remove punctuation
-                   .replace(/\s{2,}/g," ") // Remove extra spaces
-                   .trim();
+        return text.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").replace(/\s{2,}/g," ").trim();
+    }
+
+    // Helper: Play "Ding" (Correct)
+    function playPassSound() {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(500, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.1);
+        
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+        
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.5);
+    }
+
+    // Helper: Play "Bonk" (Wrong)
+    function playFailSound() {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.3);
+        
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.3);
+        
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+    }
+
+    // Play Target Sentence
+    function playAudio() {
+        window.speechSynthesis.cancel();
+        const sentenceToRead = levels[currentIndex].sentence;
+        const utterance = new SpeechSynthesisUtterance(sentenceToRead);
+        utterance.lang = 'en-US';
+        utterance.rate = 0.9;
+        window.speechSynthesis.speak(utterance);
     }
 
     function updateUI() {
+        window.speechSynthesis.cancel();
         if (currentIndex >= levels.length) {
              document.querySelector('.container').innerHTML = `
                 <h1>🎉 You Finished!</h1>
                 <p>Great practice session.</p>
-                <button onclick="location.reload()" style="background-color:#2196f3; color:white; padding:15px 30px; border:none; border-radius:50px; cursor:pointer;">Play Again 🔄</button>
+                <button onclick="location.reload()" class="btn-listen">Play Again 🔄</button>
              `;
              return;
         }
-
         document.getElementById('target-word').innerText = levels[currentIndex].word;
         document.getElementById('target-sentence').innerText = `"${levels[currentIndex].sentence}"`;
         document.getElementById('result').innerText = "";
@@ -158,6 +212,10 @@
     }
 
     function startListening() {
+        window.speechSynthesis.cancel();
+        // Resume Audio Context on user gesture to ensure sounds play on mobile
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        
         const btn = document.getElementById('speak-btn');
         btn.disabled = true;
         btn.innerText = "Listening... 👂";
@@ -167,8 +225,6 @@
     recognition.onresult = (event) => {
         const speechResult = event.results[0][0].transcript;
         const isHardMode = document.getElementById('hardModeToggle').checked;
-        
-        // Clean up both the speech and the targets
         const cleanSpeech = normalizeText(speechResult);
         const cleanTargetWord = normalizeText(levels[currentIndex].word);
         const cleanTargetSentence = normalizeText(levels[currentIndex].sentence);
@@ -176,37 +232,24 @@
         document.getElementById('transcript').innerText = `I heard: "${speechResult}"`;
         
         let passed = false;
-
         if (isHardMode) {
-            // HARD MODE: Must match the sentence exactly
-            if (cleanSpeech === cleanTargetSentence) {
-                passed = true;
-            }
+            if (cleanSpeech === cleanTargetSentence) passed = true;
         } else {
-            // STANDARD MODE: Just needs to contain the word
-            if (cleanSpeech.includes(cleanTargetWord)) {
-                passed = true;
-            }
+            if (cleanSpeech.includes(cleanTargetWord)) passed = true;
         }
 
         if (passed) {
+            playPassSound(); // DING!
             document.getElementById('result').innerHTML = "<span class='pass'>✅ PASS! Excellent.</span>";
         } else {
-            if (isHardMode) {
-                document.getElementById('result').innerHTML = "<span class='fail'>❌ Try Again. (Must match sentence exactly!)</span>";
-            } else {
-                document.getElementById('result').innerHTML = "<span class='fail'>❌ Try Again. Keep it clear!</span>";
-            }
+            playFailSound(); // BONK!
+            document.getElementById('result').innerHTML = isHardMode ? "<span class='fail'>❌ Try Again. (Must match sentence exactly!)</span>" : "<span class='fail'>❌ Try Again. Keep it clear!</span>";
         }
-        
         document.getElementById('speak-btn').disabled = false;
         document.getElementById('speak-btn').innerText = "🎤 Tap to Speak";
     };
 
-    recognition.onspeechend = () => {
-        recognition.stop();
-    };
-
+    recognition.onspeechend = () => { recognition.stop(); };
     recognition.onerror = (event) => {
         document.getElementById('speak-btn').disabled = false;
         document.getElementById('speak-btn').innerText = "🎤 Tap to Speak";
@@ -218,9 +261,7 @@
         updateUI();
     }
 
-    // Initialize
     updateUI();
 </script>
-
 </body>
 </html>
